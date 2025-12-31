@@ -1,0 +1,57 @@
+name: Build, Test, and Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-1
+  ECR_REPO: 504649076991.dkr.ecr.us-west-1.amazonaws.com/nodejs-app
+  IMAGE_TAG: latest
+  ECS_CLUSTER: nodejs-cluster
+  ECS_SERVICE: nodejs-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout source code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Configure AWS credentials via OIDC (NO SECRETS)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::504649076991:role/github-actions-iam-role-for-ecs
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Login to Amazon ECR
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build -t nodejs-app:${IMAGE_TAG} .
+
+      # Tag & push image to ECR
+      - name: Push Docker image to ECR
+        run: |
+          docker tag nodejs-app:${IMAGE_TAG} $ECR_REPO:${IMAGE_TAG}
+          docker push $ECR_REPO:${IMAGE_TAG}
+
+      # Deploy to ECS
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
